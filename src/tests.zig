@@ -519,27 +519,27 @@ test "zflecs.struct-dtor-hook" {
     // memory.
 }
 
-test "zflecs.entities.basics.api" {
+test "zflecs.api.entities.basics" {
     print("\n", .{});
 
     const world = api.init();
-    defer _ = api.deinit();
+    defer api.deinit();
 
     api.component(Position);
     api.tag(Walking);
 
     const bob = api.namedEntity("Bob");
 
-    bob.set(Position, .{ .x = 10, .y = 20 });
+    _ = bob.set(Position, .{ .x = 10, .y = 20 });
     bob.add(Walking);
 
     const ptr = bob.get(Position).?;
     print("({d}, {d})\n", .{ ptr.x, ptr.y });
 
-    bob.set(Position, .{ .x = 20, .y = 30 });
+    _ = bob.set(Position, .{ .x = 20, .y = 30 });
 
     const alice = api.namedEntity("Alice");
-    alice.set(Position, .{ .x = 10, .y = 20 });
+    _ = alice.set(Position, .{ .x = 10, .y = 20 });
     alice.add(Walking);
 
     const str = api.z.type_str(world, api.z.get_type(world, alice.entity)).?;
@@ -606,4 +606,18 @@ test "zflecs.entities.basics.api" {
         });
         defer api.z.query_fini(query);
     }
+}
+
+test "zflecs.api.try_type_coercion" {
+    _ = api.init();
+    defer api.deinit();
+
+    api.component(Position);
+    api.tag(Walking);
+
+    const id = api.id(Position);
+    const e: api.Entity = @bitCast(id);
+    print("ID: {d} ENTITY: {d})\n", .{ id.id, e.entity });
+
+    try expectEqual(id.id, e.entity);
 }
