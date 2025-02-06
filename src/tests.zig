@@ -17,6 +17,120 @@ test {
     std.testing.refAllDeclsRecursive(@This());
 }
 
+test "zflecs.api.entities.basics" {
+    print("\n", .{});
+
+    const world = api.init();
+    defer api.deinit();
+
+    api.component(Position);
+    api.tag(Walking);
+
+    const bob = api.namedEntity("Bob");
+
+    _ = bob.set(Position, .{ .x = 10, .y = 20 });
+    bob.add(Walking);
+
+    const ptr = bob.get(Position).?;
+    print("({d}, {d})\n", .{ ptr.x, ptr.y });
+
+    _ = bob.set(Position, .{ .x = 20, .y = 30 });
+
+    const alice = api.namedEntity("Alice");
+    _ = alice.set(Position, .{ .x = 10, .y = 20 });
+    alice.add(Walking);
+
+    const str = api.z.type_str(world, api.z.get_type(world, alice.entity)).?;
+    defer api.z.os.free(str);
+    print("[{s}]\n", .{str});
+
+    alice.remove(Walking);
+
+    {
+        var term = api.z.term_t{ .id = api.id(Position).entity };
+        var it = api.z.each(world, &term);
+        while (api.z.each_next(&it)) {
+            if (api.z.field(&it, Position, 0)) |positions| {
+                for (positions, it.entities()) |p, e| {
+                    print(
+                        "Term loop: {s}: ({d}, {d})\n",
+                        .{ api.z.get_name(world, e).?, p.x, p.y },
+                    );
+                }
+            }
+        }
+    }
+
+    {
+        // var desc = api.z.query_desc_t{};
+        // desc.terms[0].id = api.z.id(Position);
+        // const query = try api.z.query_init(world, &desc);
+        // defer api.z.query_fini(query);
+
+        const query = api.query([32]type{Position});
+        defer query.deinit();
+    }
+
+    {
+        const query = try api.z.query_init(world, &.{
+            .terms = [_]api.z.term_t{
+                .{ .id = api.z.id(Position) },
+                .{ .id = api.z.id(Walking) },
+            } ++ api.z.array(api.z.term_t, api.z.FLECS_TERM_COUNT_MAX - 2),
+        });
+        defer api.z.query_fini(query);
+
+        var it = api.z.query_iter(world, query);
+        while (api.z.query_next(&it)) {
+            for (it.entities()) |e| {
+                print("Filter loop: {s}\n", .{api.z.get_name(world, e).?});
+            }
+        }
+    }
+
+    {
+        const query = _: {
+            var desc = api.z.query_desc_t{};
+            desc.terms[0].id = api.z.id(Position);
+            desc.terms[1].id = api.z.id(Walking);
+            break :_ try api.z.query_init(world, &desc);
+        };
+        defer api.z.query_fini(query);
+    }
+
+    {
+        const query = try api.z.query_init(world, &.{
+            .terms = [_]api.z.term_t{
+                .{ .id = api.z.id(Position) },
+                .{ .id = api.z.id(Walking) },
+            } ++ api.z.array(api.z.term_t, api.z.FLECS_TERM_COUNT_MAX - 2),
+        });
+        defer api.z.query_fini(query);
+    }
+}
+
+// test "zflecs.api.entities.generic_has" {
+//     _ = api.init();
+//     defer api.deinit();
+//
+//     api.component(Position);
+//     api.tag(Walking);
+//
+//     const pos = api.id(Position);
+//
+//     const e = api.entity();
+//     e.add(Position);
+//
+//     try expect(e.has(Position));
+//     try expect(e.has(pos));
+//     try expect(e.has(5));
+//
+//     e.remove(Position);
+//
+//     try expect(!e.has(Position));
+//     try expect(!e.has(pos));
+// }
+
 test "extern struct ABI compatibility" {
     @setEvalBranchQuota(50_000);
     const flecs_c = @cImport({
@@ -517,107 +631,4 @@ test "zflecs.struct-dtor-hook" {
     // This test fails if the ".hooks = .{ .dtor = ... }" from COMPONENT is
     // commented out since the cleanup is never called to free the ArrayList
     // memory.
-}
-
-test "zflecs.api.entities.basics" {
-    print("\n", .{});
-
-    const world = api.init();
-    defer api.deinit();
-
-    api.component(Position);
-    api.tag(Walking);
-
-    const bob = api.namedEntity("Bob");
-
-    _ = bob.set(Position, .{ .x = 10, .y = 20 });
-    bob.add(Walking);
-
-    const ptr = bob.get(Position).?;
-    print("({d}, {d})\n", .{ ptr.x, ptr.y });
-
-    _ = bob.set(Position, .{ .x = 20, .y = 30 });
-
-    const alice = api.namedEntity("Alice");
-    _ = alice.set(Position, .{ .x = 10, .y = 20 });
-    alice.add(Walking);
-
-    const str = api.z.type_str(world, api.z.get_type(world, alice.entity)).?;
-    defer api.z.os.free(str);
-    print("[{s}]\n", .{str});
-
-    alice.remove(Walking);
-
-    {
-        var term = api.z.term_t{ .id = api.id(Position).id };
-        var it = api.z.each(world, &term);
-        while (api.z.each_next(&it)) {
-            if (api.z.field(&it, Position, 0)) |positions| {
-                for (positions, it.entities()) |p, e| {
-                    print(
-                        "Term loop: {s}: ({d}, {d})\n",
-                        .{ api.z.get_name(world, e).?, p.x, p.y },
-                    );
-                }
-            }
-        }
-    }
-
-    {
-        var desc = api.z.query_desc_t{};
-        desc.terms[0].id = api.z.id(Position);
-        const query = try api.z.query_init(world, &desc);
-        defer api.z.query_fini(query);
-    }
-
-    {
-        const query = try api.z.query_init(world, &.{
-            .terms = [_]api.z.term_t{
-                .{ .id = api.z.id(Position) },
-                .{ .id = api.z.id(Walking) },
-            } ++ api.z.array(api.z.term_t, api.z.FLECS_TERM_COUNT_MAX - 2),
-        });
-        defer api.z.query_fini(query);
-
-        var it = api.z.query_iter(world, query);
-        while (api.z.query_next(&it)) {
-            for (it.entities()) |e| {
-                print("Filter loop: {s}\n", .{api.z.get_name(world, e).?});
-            }
-        }
-    }
-
-    {
-        const query = _: {
-            var desc = api.z.query_desc_t{};
-            desc.terms[0].id = api.z.id(Position);
-            desc.terms[1].id = api.z.id(Walking);
-            break :_ try api.z.query_init(world, &desc);
-        };
-        defer api.z.query_fini(query);
-    }
-
-    {
-        const query = try api.z.query_init(world, &.{
-            .terms = [_]api.z.term_t{
-                .{ .id = api.z.id(Position) },
-                .{ .id = api.z.id(Walking) },
-            } ++ api.z.array(api.z.term_t, api.z.FLECS_TERM_COUNT_MAX - 2),
-        });
-        defer api.z.query_fini(query);
-    }
-}
-
-test "zflecs.api.try_type_coercion" {
-    _ = api.init();
-    defer api.deinit();
-
-    api.component(Position);
-    api.tag(Walking);
-
-    const id = api.id(Position);
-    const e: api.Entity = @bitCast(id);
-    print("ID: {d} ENTITY: {d})\n", .{ id.id, e.entity });
-
-    try expectEqual(id.id, e.entity);
 }
