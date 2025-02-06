@@ -5,20 +5,21 @@ pub const z = @import("zflecs.zig");
 // This is fine because upstream also has this restriction
 var world: *z.world_t = undefined;
 
-pub fn init() void {
+pub fn init() *z.world_t {
     world = z.init();
+    return world;
 }
 
 pub fn deinit() void {
-    z.fini(world);
+    _ = z.fini(world);
 }
 
 pub fn entity() Entity {
     return .{ .entity = z.new_id(world) };
 }
 
-pub fn entity_named(name: []const u8) Entity {
-    return .{ .entity = z.entity_init(world, .{ .name = name }) };
+pub fn namedEntity(name: [:0]const u8) Entity {
+    return .{ .entity = z.set_name(world, 0, name) };
 }
 
 pub fn lookup(name: []const u8) Entity {
@@ -29,9 +30,17 @@ pub fn component(comptime T: type) void {
     z.COMPONENT(world, T);
 }
 
-pub fn id(comptime T: type) Id {
-    return z.id(T);
+pub fn tag(comptime T: type) void {
+    z.TAG(world, T);
 }
+
+pub fn id(comptime T: type) Id {
+    return .{ .id = z.id(T) };
+}
+
+// pub fn id(comptime T: type) Id {
+//     return z.id(T);
+// }
 
 pub fn pair(comptime First: type, comptime Second: type) Entity {
     return z.pair(id(First), id(Second));
@@ -56,15 +65,19 @@ pub const Entity = struct {
         return z.get_name(world, self.entity);
     }
 
+    pub fn setName(self: Entity, new_name: []const u8) void {
+        z.set_name(world, self.entity, new_name);
+    }
+
     pub fn add(self: Entity, comptime T: type) void {
         z.add(world, self.entity, T);
     }
 
     pub fn set(self: Entity, comptime T: type, val: T) void {
-        z.set(world, self.entity, T, val);
+        _ = z.set(world, self.entity, T, val);
     }
 
-    pub fn get(self: Entity, comptime T: type) T {
+    pub fn get(self: Entity, comptime T: type) ?*const T {
         return z.get(world, self.entity, T);
     }
 
