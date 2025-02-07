@@ -71,7 +71,7 @@ test "zflecs.api.entities.basics" {
         // defer query.deinit();
 
         var qbuilder = api.QueryBuilder.init(&[_]type{Position} ** 31);
-        qbuilder.with(Position);
+        _ = qbuilder.with(Position);
         const query = try qbuilder.build();
         defer query.deinit();
 

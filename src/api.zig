@@ -1,5 +1,6 @@
 /// Idiomatic zig api for the  flecs bindings
 pub const z = @import("zflecs.zig");
+const assert = @import("std").debug.assert;
 
 // NOTE: currently only 1 world at a time is supported
 // This is fine because upstream also has this restriction
@@ -250,10 +251,14 @@ pub const Query = packed struct {
     }
 };
 
+pub const InoutKind = z.inout_kind_t;
+pub const OperKind = z.oper_kind_t;
+pub const Flags16 = z.flags16_t;
+
 pub const QueryBuilder = struct {
     terms: [z.FLECS_TERM_COUNT_MAX]z.term_t = [_]z.term_t{.{}} ** z.FLECS_TERM_COUNT_MAX,
     current: z.term_t = undefined,
-    index: u8 = -1,
+    index: i8 = -1,
 
     pub fn init(comptime Ts: []const type) QueryBuilder {
         if (Ts.len > z.FLECS_TERM_COUNT_MAX) {
@@ -275,63 +280,149 @@ pub const QueryBuilder = struct {
             self.terms[self.index] = self.current;
         }
         self.index += 1;
+        assert(self.index < z.FLECS_TERM_COUNT_MAX);
         return self;
     }
-
-    // NOTE: there are no bound checks on purpose
-    // adding an assert results in a worse error for the user
-    // so it's better to let zig's safety-check the bounds and
-    // panic on it's own
 
     pub fn with(self: *QueryBuilder, comptime T: type) *QueryBuilder {
         _ = self.term();
         self.current.id = id(T).entity;
+        if (@typeInfo(T) == .Optional) {
+            self.current.oper = .Optional;
+        }
+        return self;
     }
 
-    pub fn withPair(self: *QueryBuilder, comptime First: type, comptime Second: type) void {
+    pub fn withId(self: *QueryBuilder, e: Entity) *QueryBuilder {
         _ = self.term();
-        self.terms[self.index].first.id = id(First).entity;
-        self.terms[self.index].second.id = id(Second).entity;
+        self.current.id = e.entity;
+        return self;
     }
 
-    pub fn withPairFirst(self: *QueryBuilder, comptime First: type, second: Entity) void {
+    pub fn withPair(self: *QueryBuilder, comptime First: type, comptime Second: type) *QueryBuilder {
         _ = self.term();
-        self.terms[self.index].first.id = id(First).entity;
-        self.terms[self.index].second.id = second.entity;
+        self.current.first.id = id(First).entity;
+        self.current.second.id = id(Second).entity;
+        return self;
     }
 
-    pub fn withPairId(self: *QueryBuilder, first: Entity, second: Entity) void {
+    pub fn withPairFirst(self: *QueryBuilder, comptime First: type, second: Entity) *QueryBuilder {
         _ = self.term();
-        self.terms[self.index].first.id = first.entity;
-        self.terms[self.index].second.id = second.entity;
+        self.current.first.id = id(First).entity;
+        self.current.second.id = second.entity;
+        return self;
     }
 
-    pub fn setFirst(self: *QueryBuilder, comptime First: type) void {
-        self.terms[self.index].first.id = id(First).entity;
+    pub fn withPairId(self: *QueryBuilder, first: Entity, second: Entity) *QueryBuilder {
+        _ = self.term();
+        self.current.first.id = first.entity;
+        self.current.second.id = second.entity;
+        return self;
     }
 
-    pub fn setFirstId(self: *QueryBuilder, first: Entity) void {
-        self.terms[self.index].first.id = first.entity;
+    pub fn setFirst(self: *QueryBuilder, comptime First: type) *QueryBuilder {
+        self.current.first.id = id(First).entity;
+        return self;
     }
 
-    pub fn setFirstName(self: *QueryBuilder, name: [:0]const u8) void {
-        self.terms[self.index].first.name = name.entity;
+    pub fn setFirstId(self: *QueryBuilder, first: Entity) *QueryBuilder {
+        self.current.first.id = first.entity;
+        return self;
     }
 
-    pub fn setSecond(self: *QueryBuilder, comptime Second: type) void {
-        self.terms[self.index].second.id = id(Second).entity;
+    pub fn setFirstName(self: *QueryBuilder, name: [:0]const u8) *QueryBuilder {
+        self.current.first.name = name;
+        return self;
     }
 
-    pub fn setSecondId(self: *QueryBuilder, second: Entity) void {
-        self.terms[self.index].second.id = second.entity;
+    pub fn setSecond(self: *QueryBuilder, comptime Second: type) *QueryBuilder {
+        self.current.second.id = id(Second).entity;
+        return self;
     }
 
-    pub fn setSecondName(self: *QueryBuilder, name: [:0]const u8) void {
-        self.terms[self.index].second.name = name.entity;
+    pub fn setSecondId(self: *QueryBuilder, second: Entity) *QueryBuilder {
+        self.current.second.id = second.entity;
+        return self;
+    }
+
+    pub fn setSecondName(self: *QueryBuilder, name: [:0]const u8) *QueryBuilder {
+        self.current.second.name = name;
+        return self;
+    }
+
+    pub fn inoutKind(self: *QueryBuilder, kind: InoutKind) *QueryBuilder {
+        self.current.inout = kind;
+        return self;
+    }
+
+    pub fn in(self: *QueryBuilder) *QueryBuilder {
+        self.current.inout = .In;
+        return self;
+    }
+
+    pub fn out(self: *QueryBuilder) *QueryBuilder {
+        self.current.inout = .Out;
+        return self;
+    }
+
+    pub fn inout(self: *QueryBuilder) *QueryBuilder {
+        self.current.inout = .InOut;
+        return self;
+    }
+
+    pub fn inoutNone(self: *QueryBuilder) *QueryBuilder {
+        self.current.inout = .InOutNone;
+        return self;
+    }
+
+    pub fn oper(self: *QueryBuilder, kind: OperKind) *QueryBuilder {
+        self.current.oper = kind;
+        return self;
+    }
+
+    pub fn and_(self: *QueryBuilder) *QueryBuilder {
+        self.current.oper = .And;
+        return self;
+    }
+
+    pub fn or_(self: *QueryBuilder) *QueryBuilder {
+        self.current.oper = .Or;
+        return self;
+    }
+
+    pub fn not(self: *QueryBuilder) *QueryBuilder {
+        self.current.oper = .Not;
+        return self;
+    }
+
+    pub fn without(self: *QueryBuilder, comptime T: type) *QueryBuilder {
+        _ = self.term();
+        self.current.id = id(T).entity;
+        self.current.oper = .Not;
+        return self;
+    }
+
+    pub fn withoutId(self: *QueryBuilder, e: Entity) *QueryBuilder {
+        _ = self.term();
+        self.current.id = e.entity;
+        self.current.oper = .Not;
+        return self;
+    }
+
+    pub fn optional(self: *QueryBuilder) *QueryBuilder {
+        self.current.oper = .Optional;
+        return self;
+    }
+
+    pub fn flags(self: *QueryBuilder, flags_: Flags16) *QueryBuilder {
+        self.current.flags_ = flags_;
+        return self;
     }
 
     pub fn build(self: QueryBuilder) !Query {
-        _ = self.term();
+        assert(self.index < z.FLECS_TERM_COUNT_MAX);
+        self.terms[self.index] = self.current;
+
         var desc = z.query_desc_t{};
         desc.terms = self.terms;
         const q = try z.query_init(world, &desc);
