@@ -67,8 +67,22 @@ test "zflecs.api.entities.basics" {
         // const query = try api.z.query_init(world, &desc);
         // defer api.z.query_fini(query);
 
-        const query = api.query([32]type{Position});
+        // const query = try api.query(&[_]type{*const Position} ** 33);
+        // defer query.deinit();
+
+        var qbuilder = api.QueryBuilder.init(&[_]type{Position} ** 31);
+        qbuilder.with(Position);
+        const query = try qbuilder.build();
         defer query.deinit();
+
+        var it = query.iter();
+        it.each(struct {
+            pub fn each(positions: []Position) void {
+                for (positions) |pos| {
+                    print("pos: (){}, {})", .{ pos.x, pos.y });
+                }
+            }
+        }.each);
     }
 
     {

@@ -222,17 +222,161 @@ pub const singleton = struct {
     }
 };
 
-pub fn query(comptime Ts: [z.FLECS_TERM_COUNT_MAX]type) !Query {
+pub fn query(comptime Ts: []const type) !Query {
+    if (Ts.len > z.FLECS_TERM_COUNT_MAX) comptime {
+        @compileLog(@import("std").fmt.comptimePrint(
+            \\query exceeded maximum term count
+            \\note: maximum expected length is {}
+            \\note: provided length is {}
+        , .{ z.FLECS_TERM_COUNT_MAX, Ts.len }));
+    };
     var desc = z.query_desc_t{};
-    for (Ts, 0..) |T, i| {
+    inline for (Ts, 0..) |T, i| {
         desc.terms[i].id = id(T).entity;
     }
     const q = try z.query_init(world, &desc);
     return .{ .query = q };
 }
 
-pub const Query = struct {
+pub const Query = packed struct {
     query: *z.query_t,
 
-    pub fn deinit() void {}
+    pub fn deinit(self: Query) void {
+        z.query_fini(self.query);
+    }
+
+    pub fn iter(self: Query) QueryIter {
+        return .{ .it = z.query_iter(world, self.query) };
+    }
 };
+
+pub const QueryBuilder = struct {
+    terms: [z.FLECS_TERM_COUNT_MAX]z.term_t = [_]z.term_t{.{}} ** z.FLECS_TERM_COUNT_MAX,
+    current: z.term_t = undefined,
+    index: u8 = -1,
+
+    pub fn init(comptime Ts: []const type) QueryBuilder {
+        if (Ts.len > z.FLECS_TERM_COUNT_MAX) {
+            @compileError(@import("std").fmt.comptimePrint(
+                \\query exceeded maximum term count
+                \\note: maximum expected length is {}
+                \\note: provided length is {}
+            , .{ z.FLECS_TERM_COUNT_MAX, Ts.len }));
+        }
+        var self: QueryBuilder = .{};
+        inline for (Ts) |T| {
+            self.with(T);
+        }
+        return self;
+    }
+
+    pub fn term(self: *QueryBuilder) *QueryBuilder {
+        if (self.index != -1) {
+            self.terms[self.index] = self.current;
+        }
+        self.index += 1;
+        return self;
+    }
+
+    // NOTE: there are no bound checks on purpose
+    // adding an assert results in a worse error for the user
+    // so it's better to let zig's safety-check the bounds and
+    // panic on it's own
+
+    pub fn with(self: *QueryBuilder, comptime T: type) *QueryBuilder {
+        _ = self.term();
+        self.current.id = id(T).entity;
+    }
+
+    pub fn withPair(self: *QueryBuilder, comptime First: type, comptime Second: type) void {
+        _ = self.term();
+        self.terms[self.index].first.id = id(First).entity;
+        self.terms[self.index].second.id = id(Second).entity;
+    }
+
+    pub fn withPairFirst(self: *QueryBuilder, comptime First: type, second: Entity) void {
+        _ = self.term();
+        self.terms[self.index].first.id = id(First).entity;
+        self.terms[self.index].second.id = second.entity;
+    }
+
+    pub fn withPairId(self: *QueryBuilder, first: Entity, second: Entity) void {
+        _ = self.term();
+        self.terms[self.index].first.id = first.entity;
+        self.terms[self.index].second.id = second.entity;
+    }
+
+    pub fn setFirst(self: *QueryBuilder, comptime First: type) void {
+        self.terms[self.index].first.id = id(First).entity;
+    }
+
+    pub fn setFirstId(self: *QueryBuilder, first: Entity) void {
+        self.terms[self.index].first.id = first.entity;
+    }
+
+    pub fn setFirstName(self: *QueryBuilder, name: [:0]const u8) void {
+        self.terms[self.index].first.name = name.entity;
+    }
+
+    pub fn setSecond(self: *QueryBuilder, comptime Second: type) void {
+        self.terms[self.index].second.id = id(Second).entity;
+    }
+
+    pub fn setSecondId(self: *QueryBuilder, second: Entity) void {
+        self.terms[self.index].second.id = second.entity;
+    }
+
+    pub fn setSecondName(self: *QueryBuilder, name: [:0]const u8) void {
+        self.terms[self.index].second.name = name.entity;
+    }
+
+    pub fn build(self: QueryBuilder) !Query {
+        _ = self.term();
+        var desc = z.query_desc_t{};
+        desc.terms = self.terms;
+        const q = try z.query_init(world, &desc);
+        return .{ .query = q };
+    }
+};
+
+pub const QueryIter = struct {
+    it: z.iter_t,
+
+    pub fn each(self: *QueryIter, comptime f: anytype) void {
+        const Q = QueryImpl(f);
+        while (z.iter_next(&self.it)) {
+            Q.exec(&self.it);
+        }
+    }
+};
+
+const Iter = z.iter_t;
+
+fn QueryImpl(comptime fn_query: anytype) type {
+    const fn_type = @typeInfo(@TypeOf(fn_query));
+    if (fn_type.@"fn".params.len == 0) {
+        @compileError("Query needs at least one parameter");
+    }
+
+    return struct {
+        fn exec(it: *Iter) callconv(.C) void {
+            const ArgsTupleType = @import("std").meta.ArgsTuple(@TypeOf(fn_query));
+            var args_tuple: ArgsTupleType = undefined;
+
+            const has_it_param = fn_type.@"fn".params[0].type == *Iter;
+            if (has_it_param) {
+                args_tuple[0] = it;
+            }
+
+            const start_index = if (has_it_param) 1 else 0;
+
+            inline for (start_index..fn_type.@"fn".params.len) |i| {
+                const p = fn_type.@"fn".params[i];
+                args_tuple[i] = z.field(it, @typeInfo(p.type.?).pointer.child, i - start_index).?;
+            }
+
+            // NOTE: .always_inline seems ok, but unsure. Replace to .auto if it breaks
+            _ = @call(.always_inline, fn_query, args_tuple);
+        }
+    };
+}
