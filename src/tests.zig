@@ -17,134 +17,6 @@ test {
     std.testing.refAllDeclsRecursive(@This());
 }
 
-test "zflecs.api.entities.basics" {
-    print("\n", .{});
-
-    const world = api.init();
-    defer api.deinit();
-
-    api.component(Position);
-    api.tag(Walking);
-
-    const bob = api.namedEntity("Bob");
-
-    _ = bob.set(Position, .{ .x = 10, .y = 20 });
-    bob.add(Walking);
-
-    const ptr = bob.get(Position).?;
-    print("({d}, {d})\n", .{ ptr.x, ptr.y });
-
-    _ = bob.set(Position, .{ .x = 20, .y = 30 });
-
-    const alice = api.namedEntity("Alice");
-    _ = alice.set(Position, .{ .x = 10, .y = 20 });
-    alice.add(Walking);
-
-    const str = api.z.type_str(world, api.z.get_type(world, alice.entity)).?;
-    defer api.z.os.free(str);
-    print("[{s}]\n", .{str});
-
-    alice.remove(Walking);
-
-    {
-        var term = api.z.term_t{ .id = api.id(Position).entity };
-        var it = api.z.each(world, &term);
-        while (api.z.each_next(&it)) {
-            if (api.z.field(&it, Position, 0)) |positions| {
-                for (positions, it.entities()) |p, e| {
-                    print(
-                        "Term loop: {s}: ({d}, {d})\n",
-                        .{ api.z.get_name(world, e).?, p.x, p.y },
-                    );
-                }
-            }
-        }
-    }
-
-    {
-        // var desc = api.z.query_desc_t{};
-        // desc.terms[0].id = api.z.id(Position);
-        // const query = try api.z.query_init(world, &desc);
-        // defer api.z.query_fini(query);
-
-        // const query = try api.query(&[_]type{*const Position} ** 33);
-        // defer query.deinit();
-
-        var qbuilder = api.QueryBuilder.init(&[_]type{Position} ** 31);
-        _ = qbuilder.with(Position);
-        const query = try qbuilder.build();
-        defer query.deinit();
-
-        var it = query.iter();
-        it.each(struct {
-            pub fn each(positions: []Position) void {
-                for (positions) |pos| {
-                    print("pos: (){}, {})", .{ pos.x, pos.y });
-                }
-            }
-        }.each);
-    }
-
-    {
-        const query = try api.z.query_init(world, &.{
-            .terms = [_]api.z.term_t{
-                .{ .id = api.z.id(Position) },
-                .{ .id = api.z.id(Walking) },
-            } ++ api.z.array(api.z.term_t, api.z.FLECS_TERM_COUNT_MAX - 2),
-        });
-        defer api.z.query_fini(query);
-
-        var it = api.z.query_iter(world, query);
-        while (api.z.query_next(&it)) {
-            for (it.entities()) |e| {
-                print("Filter loop: {s}\n", .{api.z.get_name(world, e).?});
-            }
-        }
-    }
-
-    {
-        const query = _: {
-            var desc = api.z.query_desc_t{};
-            desc.terms[0].id = api.z.id(Position);
-            desc.terms[1].id = api.z.id(Walking);
-            break :_ try api.z.query_init(world, &desc);
-        };
-        defer api.z.query_fini(query);
-    }
-
-    {
-        const query = try api.z.query_init(world, &.{
-            .terms = [_]api.z.term_t{
-                .{ .id = api.z.id(Position) },
-                .{ .id = api.z.id(Walking) },
-            } ++ api.z.array(api.z.term_t, api.z.FLECS_TERM_COUNT_MAX - 2),
-        });
-        defer api.z.query_fini(query);
-    }
-}
-
-// test "zflecs.api.entities.generic_has" {
-//     _ = api.init();
-//     defer api.deinit();
-//
-//     api.component(Position);
-//     api.tag(Walking);
-//
-//     const pos = api.id(Position);
-//
-//     const e = api.entity();
-//     e.add(Position);
-//
-//     try expect(e.has(Position));
-//     try expect(e.has(pos));
-//     try expect(e.has(5));
-//
-//     e.remove(Position);
-//
-//     try expect(!e.has(Position));
-//     try expect(!e.has(pos));
-// }
-
 test "extern struct ABI compatibility" {
     @setEvalBranchQuota(50_000);
     const flecs_c = @cImport({
@@ -428,7 +300,7 @@ fn move(it: *ecs.iter_t) callconv(.C) void {
     }
 }
 
-test "zflecs.helloworld" {
+test "zflecs.api.helloworld" {
     print("\n", .{});
 
     const world = ecs.init();
@@ -645,4 +517,234 @@ test "zflecs.struct-dtor-hook" {
     // This test fails if the ".hooks = .{ .dtor = ... }" from COMPONENT is
     // commented out since the cleanup is never called to free the ArrayList
     // memory.
+}
+
+test "zflecs.api.entities.basics" {
+    print("\n", .{});
+
+    api.init();
+    defer api.deinit();
+
+    api.component(Position);
+    api.tag(Walking);
+
+    const bob = api.namedEntity("Bob");
+
+    _ = bob.set(Position, .{ .x = 10, .y = 20 });
+    bob.add(Walking);
+
+    const ptr = bob.get(Position).?;
+    print("({d}, {d})\n", .{ ptr.x, ptr.y });
+
+    _ = bob.set(Position, .{ .x = 20, .y = 30 });
+
+    const alice = api.namedEntity("Alice");
+    _ = alice.set(Position, .{ .x = 10, .y = 20 });
+    alice.add(Walking);
+
+    const str = alice.getType().?.string().?;
+    defer api.os.free(str);
+    print("[{s}]\n", .{str});
+
+    alice.remove(Walking);
+
+    {
+        // var term = api.z.term_t{ .id = api.id(Position).entity };
+        // var it = api.z.each(world, &term);
+        // while (api.z.each_next(&it)) {
+        //     if (api.z.field(&it, Position, 0)) |positions| {
+        //         for (positions, it.entities()) |p, e| {
+        //             print(
+        //                 "Term loop: {s}: ({d}, {d})\n",
+        //                 .{ api.z.get_name(world, e).?, p.x, p.y },
+        //             );
+        //         }
+        //     }
+        // }
+    }
+
+    {
+        const query = try api.query(&.{Position});
+        defer query.deinit();
+    }
+
+    {
+        const query = try api.query(&.{ Position, Walking });
+        defer query.deinit();
+
+        var it = query.iter();
+        while (it.next()) {
+            for (it.entities()) |e| {
+                print("Filter loop: {s}\n", .{e.name().?});
+            }
+        }
+    }
+
+    {
+        var qbuilder = api.queryBuilder(&.{ Position, Walking });
+        var query = try qbuilder.build();
+        defer query.deinit();
+    }
+}
+
+test "zflecs.api.basic" {
+    print("\n", .{});
+
+    api.init();
+    defer api.deinit();
+
+    try expect(api.hasWorld());
+
+    api.dim(100);
+
+    const e0 = api.namedEntity("aaa");
+    try expect(e0 != api.Entity.invalid);
+    try expect(e0.isAlive());
+    try expect(e0.isValid());
+
+    const e1 = api.entity();
+    try expect(e1.isAlive());
+    try expect(e1.isValid());
+
+    _ = api.clone(e1, e0, false);
+    try expect(e1.isAlive());
+    try expect(e1.isValid());
+
+    e1.deinit();
+    try expect(!e1.isAlive());
+    try expect(!e1.isValid());
+
+    registerComponents(api.world);
+    api.component(*Position);
+    api.component(Position);
+    api.component(?*const Position);
+    api.component(Direction);
+    api.component(f64);
+    api.component(u31);
+    api.component(u32);
+    api.component(f32);
+    api.component(f64);
+    api.component(i8);
+    api.component(?*const i8);
+
+    {
+        const p0 = api.pairId(api.id(u31), e0);
+        const p1 = api.pairId(e0, e0);
+        const p2 = api.pair(api.OnUpdate, Direction);
+        {
+            const str = p0.string().?;
+            defer ecs.os.free(str);
+            print("{s}\n", .{str});
+        }
+        {
+            const str = p1.string().?;
+            defer ecs.os.free(str);
+            print("{s}\n", .{str});
+        }
+        {
+            const str = p2.string().?;
+            defer ecs.os.free(str);
+            print("{s}\n", .{str});
+        }
+    }
+
+    const S0 = struct {
+        a: f32 = 3.0,
+    };
+    api.component(S0);
+
+    api.tag(Walking);
+
+    const PrintIdHelper = struct {
+        fn printId(comptime T: type) void {
+            const id_str = api.id(T).string().?;
+            defer ecs.os.free(id_str);
+
+            print("{s} id: {d}\n", .{ id_str, api.id(T).entity });
+        }
+    };
+
+    PrintIdHelper.printId(*const Position);
+    PrintIdHelper.printId(?*const Position);
+    PrintIdHelper.printId(*Position);
+    PrintIdHelper.printId(Position);
+    PrintIdHelper.printId(*Direction);
+    PrintIdHelper.printId(*Walking);
+    PrintIdHelper.printId(*u31);
+
+    const p: Position = .{ .x = 1.0, .y = 2.0 };
+    _ = e0.set(*const Position, &p);
+    _ = e0.set(?*const Position, null);
+    _ = e0.set(Position, .{ .x = 1.0, .y = 2.0 });
+    _ = e0.set(Direction, .west);
+    _ = e0.set(u31, 123);
+    _ = e0.set(u31, 1234);
+    _ = e0.set(u32, 987);
+    _ = e0.set(S0, .{});
+
+    e0.add(Walking);
+
+    try expect(e0.get(u31).?.* == 1234);
+    try expect(e0.get(u32).?.* == 987);
+    try expect(e0.get(S0).?.a == 3.0);
+    try expect(e0.get(?*const Position).?.* == null);
+    try expect(e0.get(*const Position).?.* == &p);
+    if (e0.get(Position)) |pos| {
+        try expect(pos.x == p.x and pos.y == p.y);
+    }
+
+    const e0_type_str = e0.getType().?.string().?;
+    defer ecs.os.free(e0_type_str);
+
+    const e0_table_str = e0.table().?.string().?;
+    defer ecs.os.free(e0_table_str);
+
+    const e0_str = e0.string().?;
+    defer ecs.os.free(e0_str);
+
+    print("type str: {s}\n", .{e0_type_str});
+    print("table str: {s}\n", .{e0_table_str});
+    print("entity str: {s}\n", .{e0_str});
+
+    {
+        const str = api.id(Position).getType().?.string().?;
+        defer ecs.os.free(str);
+        print("{s}\n", .{str});
+    }
+    {
+        // const str = ecs.id_str(world, ecs.id(Position)).?;
+        // defer ecs.os.free(str);
+        // print("{s}\n", .{str});
+    }
+}
+
+test "zflecs.helloworld" {
+    print("\n", .{});
+
+    api.init();
+    defer api.deinit();
+
+    api.component(Position);
+    api.component(Velocity);
+
+    api.tag(Eats);
+    api.tag(Apples);
+
+    {
+        // _ = ecs.ADD_SYSTEM_WITH_FILTERS(world, "move system", ecs.OnUpdate, move, &.{
+        //     .{ .id = ecs.id(Position) },
+        //     .{ .id = ecs.id(Velocity) },
+        // });
+    }
+
+    const bob = api.namedEntity("Bob");
+    _ = bob.set(Position, .{ .x = 0, .y = 0 });
+    _ = bob.set(Velocity, .{ .x = 1, .y = 2 });
+    bob.addPair(Eats, Apples);
+
+    _ = api.progress(0);
+    _ = api.progress(0);
+
+    const p = bob.get(Position).?;
+    print("Bob's position is ({d}, {d})\n", .{ p.x, p.y });
 }

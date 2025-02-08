@@ -1,18 +1,34 @@
 /// Idiomatic zig api for the  flecs bindings
+const std = @import("std");
+const assert = std.debug.assert;
 pub const z = @import("zflecs.zig");
-const assert = @import("std").debug.assert;
+pub const os = z.os;
 
 // NOTE: currently only 1 world at a time is supported
 // This is fine because upstream also has this restriction
-var world: *z.world_t = undefined;
+pub const World = z.world_t;
+pub var world: *World = undefined;
+var has_world = false;
 
-pub fn init() *z.world_t {
+//--------------------------------------------------------------------------------------------------
+//
+// Top level functions
+//
+//--------------------------------------------------------------------------------------------------
+pub fn init() void {
+    assert(!has_world);
     world = z.init();
-    return world;
+    has_world = true;
 }
 
 pub fn deinit() void {
+    assert(has_world);
     _ = z.fini(world);
+    has_world = false;
+}
+
+pub fn hasWorld() bool {
+    return has_world;
 }
 
 pub fn entity() Entity {
@@ -36,25 +52,78 @@ pub fn tag(comptime T: type) void {
 }
 
 pub fn id(comptime T: type) Entity {
-    return @bitCast(z.id(T));
+    return @bitCast(entityFromType(T));
 }
 
-pub const Pair = z.id_t;
+pub const Pair = packed struct {
+    pair: z.id_t,
+
+    /// Caller must free the returned memory (if it's not null)
+    /// Use `@import("zflecs").os.free(str)`
+    pub fn string(self: Pair) ?[*:0]u8 {
+        return z.id_str(world, self.pair);
+    }
+};
 
 pub fn pair(comptime First: type, comptime Second: type) Pair {
-    return z.pair(id(First), id(Second));
+    return pairId(id(First), id(Second));
+}
+
+pub fn pairId(first: Entity, second: Entity) Pair {
+    return @bitCast(z.pair(first.entity, second.entity));
 }
 
 pub fn setScope(e: Entity) Entity {
     return @bitCast(z.set_scope(world, e));
 }
 
+pub fn deferBegin() bool {
+    return z.defer_begin(world);
+}
+
+pub fn deferEnd() bool {
+    return z.defer_end(world);
+}
+
+pub fn deferSuspend() void {
+    z.defer_suspend(world);
+}
+
+pub fn deferResume() void {
+    z.defer_resume(world);
+}
+
+pub fn isDeferred() bool {
+    return z.is_deferred(world);
+}
+
+pub fn dim(entity_count: i32) void {
+    z.dim(world, entity_count);
+}
+
+pub fn clone(dst: Entity, src: Entity, copy: bool) Entity {
+    return @bitCast(z.clone(world, dst.entity, src.entity, copy));
+}
+
+pub const Ftime = z.ftime_t;
+
+pub fn progress(delta_time: Ftime) bool {
+    return z.progress(world, delta_time);
+}
+
+//--------------------------------------------------------------------------------------------------
+//
+// Entities, components and tags
+//
+//--------------------------------------------------------------------------------------------------
 pub const EntityDesc = z.entity_desc_t;
 
 pub const Entity = packed struct {
+    pub const invalid: Entity = .{ .entity = 0 };
+
     entity: u64,
 
-    pub fn destruct(self: Entity) void {
+    pub fn deinit(self: Entity) void {
         z.delete(world, self.entity);
     }
 
@@ -66,7 +135,14 @@ pub const Entity = packed struct {
         return z.is_valid(world, self.entity);
     }
 
-    pub fn name(self: Entity) []const u8 {
+    /// Caller must free the returned memory (if it's not null)
+    /// Use `@import("zflecs").os.free(str)`
+    pub fn string(self: Entity) ?[*:0]u8 {
+        // TODO: when should entity_str be used
+        return z.id_str(world, self.entity);
+    }
+
+    pub fn name(self: Entity) ?[*:0]const u8 {
         return z.get_name(world, self.entity);
     }
 
@@ -109,19 +185,19 @@ pub const Entity = packed struct {
     }
 
     pub fn has(self: Entity, comptime T: type) bool {
-        return z.has_id(world, self.entity, id(T).entity);
+        return self.hasId(id(T));
     }
 
     pub fn hasId(self: Entity, e: Entity) bool {
-        return z.has_id(world, self.entity, e);
+        return z.has_id(world, self.entity, e.entity);
     }
 
     pub fn hasPair(self: Entity, comptime First: type, comptime Second: type) bool {
-        return z.has_pair(world, self.entity, id(First), id(Second));
+        return self.hasPairId(id(First), id(Second));
     }
 
     pub fn hasPairId(self: Entity, first: Entity, second: Entity) bool {
-        return z.has_pair(world, self.entity, first, second);
+        return z.has_pair(world, self.entity, first.entity, second.entity);
     }
 
     pub fn lookup(self: Entity, child_name: []const u8) Entity {
@@ -137,39 +213,39 @@ pub const Entity = packed struct {
     }
 
     pub fn enableComponent(self: Entity, comptime T: type) void {
-        z.enable_id(world, self.entity, id(T), true);
+        z.enable_id(world, self.entity, id(T).entity, true);
     }
 
     pub fn disableComponent(self: Entity, comptime T: type) void {
-        z.enable_id(world, self.entity, id(T), false);
+        z.enable_id(world, self.entity, id(T).entity, false);
     }
 
     pub fn addPair(self: Entity, comptime First: type, comptime Second: type) void {
-        z.add_pair(world, self.entity, id(First), id(Second));
+        self.addPairId(id(First), id(Second));
     }
 
     pub fn addPairId(self: Entity, first: Entity, second: Entity) void {
-        z.add_pair(world, self.entity, first, second);
+        z.add_pair(world, self.entity, first.entity, second.entity);
     }
 
     pub fn removePair(self: Entity, comptime First: type, comptime Second: type) void {
-        z.remove_pair(world, self.entity, id(First), id(Second));
+        self.removePairId(id(First), id(Second));
     }
 
     pub fn removePairId(self: Entity, first: Entity, second: Entity) void {
-        z.remove_pair(world, self.entity, first, second);
+        z.remove_pair(world, self.entity, first.entity, second.entity);
     }
 
     pub fn setPair(self: Entity, comptime First: type, comptime Second: type, val: First) void {
-        z.set_pair(world, self.entity, id(First), id(Second), First, val);
+        self.setPairId(id(First), id(Second), First, val);
     }
 
     pub fn setPairSecond(self: Entity, comptime First: type, comptime Second: type, val: Second) void {
-        z.set_pair(world, self.entity, id(First), id(Second), Second, val);
+        self.setPairId(id(First), id(Second), Second, val);
     }
 
     pub fn setPairId(self: Entity, first: Entity, second: Entity, comptime T: type, val: T) void {
-        z.set_pair(world, self.entity, first, second, T, val);
+        z.set_pair(world, self.entity, first.entity, second.entity, T, val);
     }
 
     pub fn parent(self: Entity) Entity {
@@ -177,23 +253,32 @@ pub const Entity = packed struct {
     }
 
     pub fn target(self: Entity, comptime T: type, index: i32) Entity {
-        z.get_target(world, self.entity, id(T), index);
+        z.get_target(world, self.entity, id(T).entity, index);
     }
 
     pub fn isA(self: Entity, comptime T: type) void {
-        self.addPairId(z.IsA, id(T));
+        self.addPair(IsA, T);
     }
 
     pub fn isAnId(self: Entity, e: Entity) void {
-        self.addPairId(z.IsA, e);
+        self.addPairId(id(IsA), e);
     }
 
     pub fn childOf(self: Entity, comptime T: type) void {
-        self.addPairId(z.ChildOf, id(T));
+        self.addPair(ChildOf, id(T));
     }
 
     pub fn childOfId(self: Entity, e: Entity) void {
-        self.addPairId(z.ChildOf, e);
+        self.addPairId(id(ChildOf), e);
+    }
+
+    pub fn getType(self: Entity) ?*const EntityType {
+        return @ptrCast(z.get_type(world, self.entity));
+    }
+
+    pub fn table(self: Entity) ?Table {
+        const t: *const z.table_t = z.get_table(world, self.entity) orelse return null;
+        return .{ .table = t };
     }
 };
 
@@ -223,9 +308,38 @@ pub const singleton = struct {
     }
 };
 
+pub const EntityType = struct {
+    t: z.type_t,
+
+    /// Caller must free the returned memory (if it's not null)
+    /// Use `@import("zflecs").os.free(str)`
+    pub fn string(self: *const EntityType) ?[*:0]u8 {
+        return z.type_str(world, @ptrCast(self));
+    }
+
+    pub fn array(self: *const EntityType) []Entity {
+        return self.t.array[0..self.t.count];
+    }
+};
+
+pub const Table = struct {
+    table: *const z.table_t,
+
+    /// Caller must free the returned memory (if it's not null)
+    /// Use `@import("zflecs").os.free(str)`
+    pub fn string(self: Table) ?[*:0]u8 {
+        return z.table_str(world, self.table);
+    }
+};
+
+//--------------------------------------------------------------------------------------------------
+//
+// Queries and query iterators
+//
+//--------------------------------------------------------------------------------------------------
 pub fn query(comptime Ts: []const type) !Query {
     if (Ts.len > z.FLECS_TERM_COUNT_MAX) comptime {
-        @compileLog(@import("std").fmt.comptimePrint(
+        @compileLog(std.fmt.comptimePrint(
             \\query exceeded maximum term count
             \\note: maximum expected length is {}
             \\note: provided length is {}
@@ -239,6 +353,10 @@ pub fn query(comptime Ts: []const type) !Query {
     return .{ .query = q };
 }
 
+pub fn queryBuilder(comptime Ts: []const type) QueryBuilder {
+    return QueryBuilder.init(Ts);
+}
+
 pub const Query = packed struct {
     query: *z.query_t,
 
@@ -249,20 +367,31 @@ pub const Query = packed struct {
     pub fn iter(self: Query) QueryIter {
         return .{ .it = z.query_iter(world, self.query) };
     }
+
+    pub fn each(self: Query, comptime f: anytype) void {
+        const Q = QueryImpl(f);
+        const it = self.iter().it;
+
+        z.table_lock(it.table);
+        defer z.table_unlock(it.table);
+
+        while (z.query_next(&it)) {
+            Q.exec(&it);
+        }
+    }
 };
 
 pub const InoutKind = z.inout_kind_t;
 pub const OperKind = z.oper_kind_t;
-pub const Flags16 = z.flags16_t;
 
 pub const QueryBuilder = struct {
     terms: [z.FLECS_TERM_COUNT_MAX]z.term_t = [_]z.term_t{.{}} ** z.FLECS_TERM_COUNT_MAX,
-    current: z.term_t = undefined,
+    current: z.term_t = .{},
     index: i8 = -1,
 
     pub fn init(comptime Ts: []const type) QueryBuilder {
         if (Ts.len > z.FLECS_TERM_COUNT_MAX) {
-            @compileError(@import("std").fmt.comptimePrint(
+            @compileError(std.fmt.comptimePrint(
                 \\query exceeded maximum term count
                 \\note: maximum expected length is {}
                 \\note: provided length is {}
@@ -270,14 +399,15 @@ pub const QueryBuilder = struct {
         }
         var self: QueryBuilder = .{};
         inline for (Ts) |T| {
-            self.with(T);
+            _ = self.with(T);
         }
         return self;
     }
 
     pub fn term(self: *QueryBuilder) *QueryBuilder {
         if (self.index != -1) {
-            self.terms[self.index] = self.current;
+            self.terms[@intCast(self.index)] = self.current;
+            self.current = .{}; // ensure default state
         }
         self.index += 1;
         assert(self.index < z.FLECS_TERM_COUNT_MAX);
@@ -287,7 +417,7 @@ pub const QueryBuilder = struct {
     pub fn with(self: *QueryBuilder, comptime T: type) *QueryBuilder {
         _ = self.term();
         self.current.id = id(T).entity;
-        if (@typeInfo(T) == .Optional) {
+        if (@typeInfo(T) == .optional) {
             self.current.oper = .Optional;
         }
         return self;
@@ -414,14 +544,86 @@ pub const QueryBuilder = struct {
         return self;
     }
 
-    pub fn flags(self: *QueryBuilder, flags_: Flags16) *QueryBuilder {
-        self.current.flags_ = flags_;
+    pub fn isName(self: *QueryBuilder) *QueryBuilder {
+        self.current.second.id = z.IsName;
         return self;
     }
 
-    pub fn build(self: QueryBuilder) !Query {
+    pub fn andFrom(self: *QueryBuilder) *QueryBuilder {
+        self.current.oper = .AndFrom;
+        return self;
+    }
+
+    pub fn orFrom(self: *QueryBuilder) *QueryBuilder {
+        self.current.oper = .OrFrom;
+        return self;
+    }
+
+    pub fn notFrom(self: *QueryBuilder) *QueryBuilder {
+        self.current.oper = .NotFrom;
+        return self;
+    }
+
+    pub fn scopeOpen(self: *QueryBuilder) *QueryBuilder {
+        _ = self.term();
+        self.current.id = id(ScopeOpen).entity;
+        self.current.src.id = .IsEntity;
+        return self;
+    }
+
+    pub fn scopeClose(self: *QueryBuilder) *QueryBuilder {
+        _ = self.term();
+        self.current.id = id(ScopeClose).entity;
+        self.current.src.id = .IsEntity;
+        return self;
+    }
+
+    pub fn src(self: *QueryBuilder, comptime T: type) *QueryBuilder {
+        self.current.src.id = id(T).entity;
+        return self;
+    }
+
+    pub fn srcId(self: *QueryBuilder, e: Entity) *QueryBuilder {
+        self.current.src.id = e.entity;
+        return self;
+    }
+
+    pub fn singleton(self: *QueryBuilder) *QueryBuilder {
+        self.current.src.id = self.current.id;
+        return self;
+    }
+
+    pub fn self_(self: *QueryBuilder, comptime T: type) *QueryBuilder {
+        self.current.src.id |= z.Self;
+        self.current.trav = id(T);
+        return self;
+    }
+
+    pub fn up(self: *QueryBuilder, comptime T: type) *QueryBuilder {
+        self.current.src.id |= z.Up;
+        self.current.trav = id(T);
+        return self;
+    }
+
+    pub fn parent(self: *QueryBuilder) *QueryBuilder {
+        return self.up(ChildOf);
+    }
+
+    pub fn cascade(self: *QueryBuilder, comptime T: type) *QueryBuilder {
+        self.current.src.id |= z.Cascade;
+        self.current.trav = id(T);
+        return self;
+    }
+
+    pub fn descend(self: *QueryBuilder, comptime T: type) *QueryBuilder {
+        self.current.src.id = z.Desc;
+        self.current.trav = id(T);
+        return self;
+    }
+
+    pub fn build(self: *QueryBuilder) !Query {
         assert(self.index < z.FLECS_TERM_COUNT_MAX);
-        self.terms[self.index] = self.current;
+        self.terms[@intCast(self.index)] = self.current;
 
         var desc = z.query_desc_t{};
         desc.terms = self.terms;
@@ -431,13 +633,22 @@ pub const QueryBuilder = struct {
 };
 
 pub const QueryIter = struct {
-    it: z.iter_t,
+    it: Iter,
 
-    pub fn each(self: *QueryIter, comptime f: anytype) void {
-        const Q = QueryImpl(f);
-        while (z.iter_next(&self.it)) {
-            Q.exec(&self.it);
-        }
+    pub fn field(self: *QueryIter, comptime T: type, index: i32) ?[]T {
+        return z.field(&self.it, T, index);
+    }
+
+    pub fn next(self: *QueryIter) bool {
+        return z.query_next(&self.it);
+    }
+
+    pub fn count(self: QueryIter) usize {
+        return self.it.count();
+    }
+
+    pub fn entities(self: QueryIter) []const Entity {
+        return @ptrCast(self.it.entities());
     }
 };
 
@@ -451,7 +662,7 @@ fn QueryImpl(comptime fn_query: anytype) type {
 
     return struct {
         fn exec(it: *Iter) callconv(.C) void {
-            const ArgsTupleType = @import("std").meta.ArgsTuple(@TypeOf(fn_query));
+            const ArgsTupleType = std.meta.ArgsTuple(@TypeOf(fn_query));
             var args_tuple: ArgsTupleType = undefined;
 
             const has_it_param = fn_type.@"fn".params[0].type == *Iter;
@@ -469,5 +680,161 @@ fn QueryImpl(comptime fn_query: anytype) type {
             // NOTE: .always_inline seems ok, but unsure. Replace to .auto if it breaks
             _ = @call(.always_inline, fn_query, args_tuple);
         }
+    };
+}
+
+//--------------------------------------------------------------------------------------------------
+//
+// Types for special entities
+//
+//--------------------------------------------------------------------------------------------------
+
+// pub const Query = struct {};
+pub const Observer = struct {};
+pub const System = struct {};
+pub const Flecs = struct {};
+pub const FlecsCore = struct {};
+// pub const World = struct {};
+pub const Wildcard = struct {};
+pub const Any = struct {};
+pub const This = struct {};
+pub const Variable = struct {};
+pub const Transitive = struct {};
+pub const Reflexive = struct {};
+pub const Final = struct {};
+pub const OnInstantiate = struct {};
+pub const Override = struct {};
+pub const Inherit = struct {};
+pub const DontInherit = struct {};
+pub const Symmetric = struct {};
+pub const Exclusive = struct {};
+pub const Acyclic = struct {};
+pub const Traversable = struct {};
+pub const With = struct {};
+pub const OneOf = struct {};
+pub const CanToggle = struct {};
+pub const Trait = struct {};
+pub const Relationship = struct {};
+pub const Target = struct {};
+pub const PairIsTag = struct {};
+pub const Name = struct {};
+pub const Symbol = struct {};
+pub const Alias = struct {};
+pub const ChildOf = struct {};
+pub const IsA = struct {};
+pub const DependsOn = struct {};
+pub const SlotOf = struct {};
+pub const Module = struct {};
+pub const Private = struct {};
+pub const Prefab = struct {};
+pub const Disabled = struct {};
+pub const NotQueryable = struct {};
+pub const OnAdd = struct {};
+pub const OnRemove = struct {};
+pub const OnSet = struct {};
+pub const Monitor = struct {};
+pub const OnTableCreate = struct {};
+pub const OnTableDelete = struct {};
+pub const OnDelete = struct {};
+pub const OnDeleteTarget = struct {};
+pub const Remove = struct {};
+pub const Delete = struct {};
+pub const Panic = struct {};
+pub const Sparse = struct {};
+pub const Union = struct {};
+pub const PredEq = struct {};
+pub const PredMatch = struct {};
+pub const PredLookup = struct {};
+pub const ScopeOpen = struct {};
+pub const ScopeClose = struct {};
+pub const Empty = struct {};
+
+pub const OnStart = struct {};
+pub const PreFrame = struct {};
+pub const OnLoad = struct {};
+pub const PostLoad = struct {};
+pub const PreUpdate = struct {};
+pub const OnUpdate = struct {};
+pub const OnValidate = struct {};
+pub const PostUpdate = struct {};
+pub const PreStore = struct {};
+pub const OnStore = struct {};
+pub const PostFrame = struct {};
+pub const Phase = struct {};
+
+fn entityFromType(comptime T: type) z.entity_t {
+    return switch (T) {
+        // Query => z.Query,
+        Observer => z.Observer,
+        System => z.System,
+        Flecs => z.Flecs,
+        FlecsCore => z.FlecsCore,
+        // World => z.World,
+        Wildcard => z.Wildcard,
+        Any => z.Any,
+        This => z.This,
+        Variable => z.Variable,
+        Transitive => z.Transitive,
+        Reflexive => z.Reflexive,
+        Final => z.Final,
+        OnInstantiate => z.OnInstantiate,
+        Override => z.Override,
+        Inherit => z.Inherit,
+        DontInherit => z.DontInherit,
+        Symmetric => z.Symmetric,
+        Exclusive => z.Exclusive,
+        Acyclic => z.Acyclic,
+        Traversable => z.Traversable,
+        With => z.With,
+        OneOf => z.OneOf,
+        CanToggle => z.CanToggle,
+        Trait => z.Trait,
+        Relationship => z.Relationship,
+        Target => z.Target,
+        PairIsTag => z.PairIsTag,
+        Name => z.Name,
+        Symbol => z.Symbol,
+        Alias => z.Alias,
+        ChildOf => z.ChildOf,
+        IsA => z.IsA,
+        DependsOn => z.DependsOn,
+        SlotOf => z.SlotOf,
+        Module => z.Module,
+        Private => z.Private,
+        Prefab => z.Prefab,
+        Disabled => z.Disabled,
+        NotQueryable => z.NotQueryable,
+        OnAdd => z.OnAdd,
+        OnRemove => z.OnRemove,
+        OnSet => z.OnSet,
+        Monitor => z.Monitor,
+        OnTableCreate => z.OnTableCreate,
+        OnTableDelete => z.OnTableDelete,
+        OnDelete => z.OnDelete,
+        OnDeleteTarget => z.OnDeleteTarget,
+        Remove => z.Remove,
+        Delete => z.Delete,
+        Panic => z.Panic,
+        Sparse => z.Sparse,
+        Union => z.Union,
+        PredEq => z.PredEq,
+        PredMatch => z.PredMatch,
+        PredLookup => z.PredLookup,
+        ScopeOpen => z.ScopeOpen,
+        ScopeClose => z.ScopeClose,
+        Empty => z.Empty,
+        OnStart => z.OnStart,
+        PreFrame => z.PreFrame,
+        OnLoad => z.OnLoad,
+        PostLoad => z.PostLoad,
+        PreUpdate => z.PreUpdate,
+        OnUpdate => z.OnUpdate,
+        OnValidate => z.OnValidate,
+        PostUpdate => z.PostUpdate,
+        PreStore => z.PreStore,
+        OnStore => z.OnStore,
+        PostFrame => z.PostFrame,
+        Phase => z.Phase,
+        else => z.id(T),
     };
 }
