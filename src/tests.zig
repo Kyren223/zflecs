@@ -1,6 +1,6 @@
 const std = @import("std");
 const ecs = @import("zflecs.zig");
-const api = @import("api.zig");
+const api = @import("ecs.zig");
 const builtin = @import("builtin");
 
 const expect = std.testing.expect;
