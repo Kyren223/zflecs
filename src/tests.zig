@@ -300,7 +300,7 @@ fn move(it: *ecs.iter_t) callconv(.C) void {
     }
 }
 
-test "zflecs.api.helloworld" {
+test "zflecs.helloworld" {
     print("\n", .{});
 
     const world = ecs.init();
@@ -712,13 +712,13 @@ test "zflecs.api.basic" {
         print("{s}\n", .{str});
     }
     {
-        // const str = ecs.id_str(world, ecs.id(Position)).?;
-        // defer ecs.os.free(str);
-        // print("{s}\n", .{str});
+        const str = api.id(Position).string().?;
+        defer ecs.os.free(str);
+        print("{s}\n", .{str});
     }
 }
 
-test "zflecs.helloworld" {
+test "zflecs.api.helloworld" {
     print("\n", .{});
 
     api.init();
@@ -731,11 +731,74 @@ test "zflecs.helloworld" {
     api.tag(Apples);
 
     {
-        // _ = ecs.ADD_SYSTEM_WITH_FILTERS(world, "move system", ecs.OnUpdate, move, &.{
-        //     .{ .id = ecs.id(Position) },
-        //     .{ .id = ecs.id(Velocity) },
-        // });
+        var qb = api.queryBuilder(&.{});
+        const terms = &qb.with(Position).with(Velocity).buildTerms();
+        _ = api.addSystemWithFilters("move_system", api.OnUpdate, move, terms);
     }
+
+    const bob = api.namedEntity("Bob");
+    _ = bob.set(Position, .{ .x = 0, .y = 0 });
+    _ = bob.set(Velocity, .{ .x = 1, .y = 2 });
+    bob.addPair(Eats, Apples);
+
+    _ = api.progress(0);
+    _ = api.progress(0);
+
+    const p = bob.get(Position).?;
+    print("Bob's position is ({d}, {d})\n", .{ p.x, p.y });
+}
+
+const Moveable = struct {};
+
+test "zflecs.api.prefab" {
+    print("\n", .{});
+
+    api.init();
+    defer api.deinit();
+
+    api.component(Position);
+    api.component(Velocity);
+
+    const prefab = api.prefab(Moveable)
+        .set(Position, .{ .x = 0, .y = 0 })
+        .set(Velocity, .{ .x = 2, .y = 1 });
+
+    try expect(prefab.entity != 0);
+
+    const bob = api.namedEntity("Bob").isA(Moveable);
+
+    var p = bob.get(Position).?;
+    const v = bob.get(Velocity).?;
+
+    try expect(p.x == 0);
+    try expect(p.y == 0);
+
+    try expect(v.x == 2);
+    try expect(v.y == 1);
+    print("Name: {s}\n", .{@typeName(@TypeOf(v))});
+
+    _ = bob.set(Position, .{ .x = 7, .y = 4 });
+    p = bob.get(Position).?;
+    try expect(p.x == 7);
+    try expect(p.y == 4);
+
+    print("Bob's position is ({d}, {d})\n", .{ p.x, p.y });
+}
+
+test "zflecs.api.helloworld_systemcomptime" {
+    print("\n", .{});
+
+    api.init();
+    defer api.deinit();
+
+    api.component(Position);
+    api.component(Velocity);
+
+    api.tag(Eats);
+    api.tag(Apples);
+
+    _ = api.addSystem("move system", api.OnUpdate, move_system);
+    _ = api.addSystem("move system with iterator", api.OnUpdate, move_system_with_it);
 
     const bob = api.namedEntity("Bob");
     _ = bob.set(Position, .{ .x = 0, .y = 0 });

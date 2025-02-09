@@ -4,6 +4,10 @@ const assert = std.debug.assert;
 pub const z = @import("zflecs.zig");
 pub const os = z.os;
 
+test {
+    std.testing.refAllDecls(@This());
+}
+
 // NOTE: currently only 1 world at a time is supported
 // This is fine because upstream also has this restriction
 pub const World = z.world_t;
@@ -39,7 +43,24 @@ pub fn namedEntity(name: [:0]const u8) Entity {
     return @bitCast(z.set_name(world, 0, name));
 }
 
-pub fn lookup(name: []const u8) Entity {
+pub fn prefab(comptime T: type) Entity {
+    tag(T);
+    const e = id(T);
+    e.add(Prefab);
+    return e;
+}
+
+pub fn prefabId() Entity {
+    var e = entity();
+    e.add(Prefab);
+    return e;
+}
+
+pub fn namedPrefab(name: [:0]const u8) Entity {
+    return @bitCast(z.new_prefab(world, name));
+}
+
+pub fn lookup(name: [*:0]const u8) Entity {
     return @bitCast(z.lookup(world, name));
 }
 
@@ -74,7 +95,7 @@ pub fn pairId(first: Entity, second: Entity) Pair {
 }
 
 pub fn setScope(e: Entity) Entity {
-    return @bitCast(z.set_scope(world, e));
+    return @bitCast(z.set_scope(world, e.entity));
 }
 
 pub fn deferBegin() bool {
@@ -111,6 +132,14 @@ pub fn progress(delta_time: Ftime) bool {
     return z.progress(world, delta_time);
 }
 
+pub fn addSystem(name: [:0]const u8, comptime Phase: type, comptime fn_system: anytype) Entity {
+    return @bitCast(z.ADD_SYSTEM(world, name, id(Phase).entity, fn_system));
+}
+
+pub fn addSystemWithFilters(name: [:0]const u8, comptime Phase: type, comptime fn_system: anytype, filters: []const Term) Entity {
+    return @bitCast(z.ADD_SYSTEM_WITH_FILTERS(world, name, id(Phase).entity, fn_system, filters));
+}
+
 //--------------------------------------------------------------------------------------------------
 //
 // Entities, components and tags
@@ -138,8 +167,11 @@ pub const Entity = packed struct {
     /// Caller must free the returned memory (if it's not null)
     /// Use `@import("zflecs").os.free(str)`
     pub fn string(self: Entity) ?[*:0]u8 {
-        // TODO: when should entity_str be used
         return z.id_str(world, self.entity);
+    }
+
+    pub fn entityString(self: Entity) ?[*:0]u8 {
+        return z.entity_str(world, self.entity);
     }
 
     pub fn name(self: Entity) ?[*:0]const u8 {
@@ -152,7 +184,11 @@ pub const Entity = packed struct {
     }
 
     pub fn add(self: Entity, comptime T: type) void {
-        z.add(world, self.entity, T);
+        return self.addId(id(T));
+    }
+
+    pub fn addId(self: Entity, e: Entity) void {
+        z.add_id(world, self.entity, e.entity);
     }
 
     pub fn set(self: Entity, comptime T: type, val: T) Entity {
@@ -256,12 +292,14 @@ pub const Entity = packed struct {
         z.get_target(world, self.entity, id(T).entity, index);
     }
 
-    pub fn isA(self: Entity, comptime T: type) void {
+    pub fn isA(self: Entity, comptime T: type) Entity {
         self.addPair(IsA, T);
+        return self;
     }
 
-    pub fn isAnId(self: Entity, e: Entity) void {
+    pub fn isAnId(self: Entity, e: Entity) Entity {
         self.addPairId(id(IsA), e);
+        return self;
     }
 
     pub fn childOf(self: Entity, comptime T: type) void {
@@ -279,6 +317,14 @@ pub const Entity = packed struct {
     pub fn table(self: Entity) ?Table {
         const t: *const z.table_t = z.get_table(world, self.entity) orelse return null;
         return .{ .table = t };
+    }
+
+    pub fn owns(self: Entity, comptime T: type) bool {
+        return self.ownsId(id(T));
+    }
+
+    pub fn ownsId(self: Entity, e: Entity) bool {
+        return z.owns_id(world, self.entity, e.entity);
     }
 };
 
@@ -383,6 +429,7 @@ pub const Query = packed struct {
 
 pub const InoutKind = z.inout_kind_t;
 pub const OperKind = z.oper_kind_t;
+pub const Term = z.term_t;
 
 pub const QueryBuilder = struct {
     terms: [z.FLECS_TERM_COUNT_MAX]z.term_t = [_]z.term_t{.{}} ** z.FLECS_TERM_COUNT_MAX,
@@ -630,6 +677,12 @@ pub const QueryBuilder = struct {
         const q = try z.query_init(world, &desc);
         return .{ .query = q };
     }
+
+    pub fn buildTerms(self: *QueryBuilder) [z.FLECS_TERM_COUNT_MAX]Term {
+        assert(self.index < z.FLECS_TERM_COUNT_MAX);
+        self.terms[@intCast(self.index)] = self.current;
+        return self.terms;
+    }
 };
 
 pub const QueryIter = struct {
@@ -760,7 +813,7 @@ pub const PostUpdate = struct {};
 pub const PreStore = struct {};
 pub const OnStore = struct {};
 pub const PostFrame = struct {};
-pub const Phase = struct {};
+// pub const Phase = struct {};
 
 fn entityFromType(comptime T: type) z.entity_t {
     return switch (T) {
@@ -834,7 +887,7 @@ fn entityFromType(comptime T: type) z.entity_t {
         PreStore => z.PreStore,
         OnStore => z.OnStore,
         PostFrame => z.PostFrame,
-        Phase => z.Phase,
+        // Phase => z.Phase,
         else => z.id(T),
     };
 }
