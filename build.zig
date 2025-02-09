@@ -6,7 +6,7 @@ pub fn build(b: *std.Build) void {
     const opt_use_shared = b.option(bool, "shared", "Make shared (default: false)") orelse false;
     const opt_use_api = b.option(bool, "api", "Use idiomatic zig api (default: true)") orelse true;
     _ = b.addModule("root", .{
-        .root_source_file = if (opt_use_api) b.path("src/api.zig") else b.path("src/zflecs.zig"),
+        .root_source_file = if (opt_use_api) b.path("src/ecs.zig") else b.path("src/zflecs.zig"),
     });
 
     const flecs = if (opt_use_shared) b.addSharedLibrary(.{
