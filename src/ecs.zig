@@ -132,11 +132,11 @@ pub fn progress(delta_time: Ftime) bool {
     return z.progress(world, delta_time);
 }
 
-pub fn addSystem(name: [:0]const u8, comptime Phase: type, comptime fn_system: anytype) Entity {
+pub fn system(name: [:0]const u8, comptime Phase: type, comptime fn_system: anytype) Entity {
     return @bitCast(z.ADD_SYSTEM(world, name, id(Phase).entity, fn_system));
 }
 
-pub fn addSystemWithFilters(name: [:0]const u8, comptime Phase: type, comptime fn_system: anytype, filters: []const Term) Entity {
+pub fn systemWithFilters(name: [:0]const u8, comptime Phase: type, comptime fn_system: anytype, filters: []const Term) Entity {
     return @bitCast(z.ADD_SYSTEM_WITH_FILTERS(world, name, id(Phase).entity, fn_system, filters));
 }
 
@@ -705,7 +705,7 @@ pub const QueryIter = struct {
     }
 };
 
-const Iter = z.iter_t;
+pub const Iter = z.iter_t;
 
 fn QueryImpl(comptime fn_query: anytype) type {
     const fn_type = @typeInfo(@TypeOf(fn_query));
