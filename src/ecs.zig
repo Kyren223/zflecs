@@ -333,8 +333,8 @@ pub const singleton = struct {
         z.singleton_add(world, T);
     }
 
-    pub fn set(comptime T: type) void {
-        _ = z.singleton_set(world, T);
+    pub fn set(comptime T: type, val: T) void {
+        _ = z.singleton_set(world, T, val);
     }
 
     pub fn remove(comptime T: type) void {
