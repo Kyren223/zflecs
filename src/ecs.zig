@@ -342,7 +342,7 @@ pub const singleton = struct {
     }
 
     pub fn get(comptime T: type) ?*const T {
-        z.singleton_get(world, T);
+        return z.singleton_get(world, T);
     }
 
     pub fn getMut(comptime T: type) ?*T {
