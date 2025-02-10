@@ -68,6 +68,32 @@ pub fn component(comptime T: type) void {
     z.COMPONENT(world, T);
 }
 
+const TypeHooks = z.type_hooks_t;
+
+pub fn componentWithHooks(comptime T: type, hooks: TypeHooks) void {
+    if (@sizeOf(T) == 0)
+        @compileError("Size of the type must be greater than zero");
+
+    const type_id_ptr = z.perTypeGlobalVarPtr(T);
+    if (type_id_ptr.* != 0)
+        return;
+
+    z.component_ids_hm.put(type_id_ptr, 0) catch @panic("OOM");
+
+    type_id_ptr.* = z.ecs_component_init(world, &.{
+        .entity = z.ecs_entity_init(world, &.{
+            .use_low_id = true,
+            .name = z.typeName(T),
+            .symbol = z.typeName(T),
+        }),
+        .type = .{
+            .alignment = @alignOf(T),
+            .size = @sizeOf(T),
+            .hooks = hooks,
+        },
+    });
+}
+
 pub fn tag(comptime T: type) void {
     z.TAG(world, T);
 }

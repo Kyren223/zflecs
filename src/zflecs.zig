@@ -2598,6 +2598,10 @@ pub fn COMPONENT(world: *world_t, comptime T: type) void {
                         pub fn dtor(ptr: *anyopaque, _: i32, _: *const type_info_t) callconv(.C) void {
                             T.dtor(@as(*T, @alignCast(@ptrCast(ptr))).*);
                         }
+                    }.dtor else if (@hasDecl(T, "deinit")) struct {
+                        pub fn dtor(ptr: *anyopaque, _: i32, _: *const type_info_t) callconv(.C) void {
+                            T.deinit(@as(*T, @alignCast(@ptrCast(ptr))).*);
+                        }
                     }.dtor else null,
                     else => null,
                 },
