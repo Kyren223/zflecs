@@ -2683,7 +2683,11 @@ fn SystemImpl(comptime fn_system: anytype) type {
 
             inline for (start_index..fn_type.@"fn".params.len) |i| {
                 const p = fn_type.@"fn".params[i];
-                args_tuple[i] = field(it, @typeInfo(p.type.?).pointer.child, i - start_index).?;
+                if (@typeInfo(p.type.?).pointer.size == .one) {
+                    args_tuple[i] = fieldOne(it, @typeInfo(p.type.?).pointer.child, i - start_index).?;
+                } else {
+                    args_tuple[i] = field(it, @typeInfo(p.type.?).pointer.child, i - start_index).?;
+                }
             }
 
             //NOTE: .always_inline seems ok, but unsure. Replace to .auto if it breaks
@@ -2884,6 +2888,14 @@ pub fn field(it: *iter_t, comptime T: type, index: i8) ?[]T {
     if (ecs_field_w_size(it, @sizeOf(T), index)) |anyptr| {
         const ptr = @as([*]T, @ptrCast(@alignCast(anyptr)));
         return ptr[0..it.count()];
+    }
+    return null;
+}
+
+pub fn fieldOne(it: *iter_t, comptime T: type, index: i8) ?*T {
+    if (ecs_field_w_size(it, @sizeOf(T), index)) |anyptr| {
+        const ptr = @as(*T, @ptrCast(@alignCast(anyptr)));
+        return ptr;
     }
     return null;
 }
