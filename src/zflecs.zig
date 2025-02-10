@@ -2706,7 +2706,29 @@ pub fn SYSTEM_DESC(comptime fn_system: anytype) system_desc_t {
         const p = fn_type.params[i];
         const param_type_info = @typeInfo(p.type.?).pointer;
         const inout = if (param_type_info.is_const) .In else .InOut;
-        system_desc.query.terms[i - start_index] = .{ .id = id(param_type_info.child), .inout = inout };
+        const param_id = id(param_type_info.child);
+        switch (param_type_info.size) {
+            .slice => {
+                system_desc.query.terms[i - start_index] = .{
+                    .id = param_id,
+                    .inout = inout,
+                };
+            },
+            .one => {
+                // singleton
+                system_desc.query.terms[i - start_index] = .{
+                    .id = param_id,
+                    .src = .{ .id = param_id },
+                    .inout = inout,
+                };
+            },
+            .many, .c => {
+                // TODO: how should these be handled?
+                // many-item can maybe be along with slice
+                // and c pointer can stay as a compile error?
+                @compileError("many-item and c-style pointers are not supported in systems!");
+            },
+        }
     }
 
     return system_desc;

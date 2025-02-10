@@ -733,7 +733,7 @@ test "zflecs.api.helloworld" {
     {
         var qb = api.queryBuilder(&.{});
         const terms = &qb.with(Position).with(Velocity).buildTerms();
-        _ = api.addSystemWithFilters("move_system", api.OnUpdate, move, terms);
+        _ = api.systemWithFilters("move_system", api.OnUpdate, move, terms);
     }
 
     const bob = api.namedEntity("Bob");
@@ -797,8 +797,8 @@ test "zflecs.api.helloworld_systemcomptime" {
     api.tag(Eats);
     api.tag(Apples);
 
-    _ = api.addSystem("move system", api.OnUpdate, move_system);
-    _ = api.addSystem("move system with iterator", api.OnUpdate, move_system_with_it);
+    _ = api.system("move system", api.OnUpdate, move_system);
+    _ = api.system("move system with iterator", api.OnUpdate, move_system_with_it);
 
     const bob = api.namedEntity("Bob");
     _ = bob.set(Position, .{ .x = 0, .y = 0 });
